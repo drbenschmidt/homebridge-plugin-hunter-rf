@@ -3,7 +3,11 @@
   "extends": [
     "eslint:recommended",
     "plugin:@typescript-eslint/eslint-recommended",
-    "plugin:@typescript-eslint/recommended" // uses the recommended rules from the @typescript-eslint/eslint-plugin
+    "plugin:@typescript-eslint/recommended", // uses the recommended rules from the @typescript-eslint/eslint-plugin
+    "plugin:prettier/recommended"
+  ],
+  "plugins": [
+    "prettier"
   ],
   "parserOptions": {
     "ecmaVersion": 2018,
@@ -13,6 +17,7 @@
     "dist"
   ],
   "rules": {
+    "prettier/prettier": "error",
     "quotes": ["warn", "single"],
     "indent": ["warn", 2, { "SwitchCase": 1 }],
     "linebreak-style": ["warn", "unix"],

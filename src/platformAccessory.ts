@@ -1,38 +1,63 @@
-import { Service, PlatformAccessory, CharacteristicValue, CharacteristicSetCallback, CharacteristicGetCallback } from 'homebridge';
+import {
+  Service,
+  PlatformAccessory,
+  CharacteristicValue,
+  CharacteristicSetCallback,
+  CharacteristicGetCallback,
+} from 'homebridge';
 
-import { ExampleHomebridgePlatform } from './platform';
+import { HunterFanRfPlatform } from './platform';
+
+enum FanState {
+  Off,
+  Low,
+  Medium,
+  High,
+}
+
+enum LightState {
+  Off,
+  On,
+}
 
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
  * Each accessory may expose multiple services of different service types.
  */
-export class ExamplePlatformAccessory {
-  private service: Service;
+export class HunterRfFanAccessory {
+  private lightService: Service;
+  private fanService: Service;
 
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
-  private exampleStates = {
-    On: false,
-    Brightness: 100,
-  }
+  private state = {
+    light: LightState.Off,
+    fan: FanState.Off,
+    fanActive: false,
+  };
 
   constructor(
-    private readonly platform: ExampleHomebridgePlatform,
+    private readonly platform: HunterFanRfPlatform,
     private readonly accessory: PlatformAccessory,
   ) {
-
     // set accessory information
-    this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Default-Manufacturer')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Default-Model')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Default-Serial');
+    this.accessory
+      .getService(this.platform.Service.AccessoryInformation)!
+      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Hunter')
+      .setCharacteristic(this.platform.Characteristic.Model, '434Mhz RF')
+      .setCharacteristic(
+        this.platform.Characteristic.SerialNumber,
+        'Default-Serial',
+      );
 
     // get the LightBulb service if it exists, otherwise create a new LightBulb service
     // you can create multiple services for each accessory
-    this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
+    this.lightService =
+      this.accessory.getService(this.platform.Service.Lightbulb) ||
+      this.accessory.addService(this.platform.Service.Lightbulb);
+
+    this.fanService =
+      this.accessory.getService(this.platform.Service.Fanv2) ||
+      this.accessory.addService(this.platform.Service.Fanv2);
 
     // To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
     // when creating multiple services of the same type, you need to use the following syntax to specify a name and subtype id:
@@ -40,91 +65,113 @@ export class ExamplePlatformAccessory {
 
     // set the service name, this is what is displayed as the default name on the Home app
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.exampleDisplayName);
+    this.lightService.setCharacteristic(
+      this.platform.Characteristic.Name,
+      accessory.context.device.exampleDisplayName,
+    );
+
+    this.fanService.setCharacteristic(
+      this.platform.Characteristic.Name,
+      accessory.context.device.exampleDisplayName,
+    );
 
     // each service must implement at-minimum the "required characteristics" for the given service type
     // see https://developers.homebridge.io/#/service/Lightbulb
 
-    // register handlers for the On/Off Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.On)
-      .on('set', this.setOn.bind(this))                // SET - bind to the `setOn` method below
-      .on('get', this.getOn.bind(this));               // GET - bind to the `getOn` method below
+    this.lightService
+      .getCharacteristic(this.platform.Characteristic.On)
+      .on('set', this.onLightSetOn)
+      .on('get', this.onLightGetOn);
 
-    // register handlers for the Brightness Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-      .on('set', this.setBrightness.bind(this));       // SET - bind to the 'setBrightness` method below
+    this.fanService
+      .getCharacteristic(this.platform.Characteristic.Active)
+      .on('set', this.onLightSetOn)
+      .on('get', this.onLightGetOn);
 
-    // EXAMPLE ONLY
-    // Example showing how to update the state of a Characteristic asynchronously instead
-    // of using the `on('get')` handlers.
-    //
-    // Here we change update the brightness to a random value every 5 seconds using 
-    // the `updateCharacteristic` method.
-    setInterval(() => {
-      // assign the current brightness a random value between 0 and 100
-      const currentBrightness = Math.floor(Math.random() * 100);
-
-      // push the new value to HomeKit
-      this.service.updateCharacteristic(this.platform.Characteristic.Brightness, currentBrightness);
-
-      this.platform.log.debug('Pushed updated current Brightness state to HomeKit:', currentBrightness);
-    }, 10000);
+    this.fanService
+      .getCharacteristic(this.platform.Characteristic.RotationSpeed)
+      .on('set', this.onFanSetRotationSpeed)
+      .on('get', this.onFanGetRotationSpeed);
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  setOn(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-
+  onLightSetOn = (
+    value: CharacteristicValue,
+    callback: CharacteristicSetCallback,
+  ) => {
     // implement your own code to turn your device on/off
-    this.exampleStates.On = value as boolean;
+    this.state.light = (value as boolean) ? LightState.On : LightState.Off;
 
-    this.platform.log.debug('Set Characteristic On ->', value);
+    this.platform.log.debug('Set Light On ->', value);
 
     // you must call the callback function
     callback(null);
-  }
+  };
 
-  /**
-   * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   * 
-   * GET requests should return as fast as possbile. A long delay here will result in
-   * HomeKit being unresponsive and a bad user experience in general.
-   * 
-   * If your device takes time to respond you should update the status of your device
-   * asynchronously instead using the `updateCharacteristic` method instead.
-
-   * @example
-   * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
-   */
-  getOn(callback: CharacteristicGetCallback) {
-
+  onLightGetOn = (callback: CharacteristicGetCallback) => {
     // implement your own code to check if the device is on
-    const isOn = this.exampleStates.On;
+    const isOn = this.state.light === LightState.On;
 
-    this.platform.log.debug('Get Characteristic On ->', isOn);
+    this.platform.log.debug('Get Light On ->', isOn);
 
     // you must call the callback function
     // the first argument should be null if there were no errors
     // the second argument should be the value to return
     callback(null, isOn);
-  }
+  };
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, changing the Brightness
-   */
-  setBrightness(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+  onFanSetActive = (
+    value: CharacteristicValue,
+    callback: CharacteristicSetCallback,
+  ) => {
+    const { Active } = this.platform.Characteristic;
 
-    // implement your own code to set the brightness
-    this.exampleStates.Brightness = value as number;
+    // implement your own code to turn your device on/off
+    this.state.fanActive = Boolean((value as number) === Active.ACTIVE);
 
-    this.platform.log.debug('Set Characteristic Brightness -> ', value);
+    this.platform.log.debug('Set Fan Active ->', value);
 
     // you must call the callback function
     callback(null);
-  }
+  };
 
+  onFanGetActive = (callback: CharacteristicGetCallback) => {
+    // implement your own code to check if the device is on
+    const isActive = this.state.fan !== FanState.Off;
+
+    this.platform.log.debug('Get Fan Active ->', isActive);
+
+    // you must call the callback function
+    // the first argument should be null if there were no errors
+    // the second argument should be the value to return
+    callback(null, isActive);
+  };
+
+  onFanSetRotationSpeed = (
+    value: CharacteristicValue,
+    callback: CharacteristicSetCallback,
+  ) => {
+    const targetValue = value as number;
+
+    if (targetValue > 1 && targetValue < 33) {
+      this.state.fan = FanState.Low;
+    }
+
+    if (targetValue > 33 && targetValue < 66) {
+      this.state.fan = FanState.Medium;
+    }
+
+    if (targetValue > 66 && targetValue <= 100) {
+      this.state.fan = FanState.High;
+    }
+
+    this.platform.log.debug('Set Fan Speed ->', value);
+
+    callback(null);
+  };
+
+  onFanGetRotationSpeed = (callback: CharacteristicGetCallback) => {
+    this.platform.log.debug('Get Fan Speed ->', this.state.fan.toString());
+
+    callback(null, this.state.fan);
+  };
 }
