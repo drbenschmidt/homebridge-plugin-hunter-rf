@@ -65,11 +65,7 @@ export class HunterFanRfPlatform implements DynamicPlatformPlugin {
     const exampleDevices = [
       {
         exampleUniqueId: 'ABCD',
-        exampleDisplayName: 'Bedroom',
-      },
-      {
-        exampleUniqueId: 'EFGH',
-        exampleDisplayName: 'Kitchen',
+        displayName: 'Bedroom',
       },
     ];
 
@@ -102,11 +98,11 @@ export class HunterFanRfPlatform implements DynamicPlatformPlugin {
         new HunterRfFanAccessory(this, existingAccessory);
       } else {
         // the accessory does not yet exist, so we need to create it
-        this.log.info('Adding new accessory:', device.exampleDisplayName);
+        this.log.info('Adding new accessory:', device.displayName);
 
         // create a new accessory
         const accessory = new this.api.platformAccessory(
-          device.exampleDisplayName,
+          device.displayName,
           uuid,
         );
 

@@ -4,20 +4,41 @@ import {
   CharacteristicValue,
   CharacteristicSetCallback,
   CharacteristicGetCallback,
+  Logger,
 } from 'homebridge';
 
 import { HunterFanRfPlatform } from './platform';
 
 enum FanState {
-  Off,
-  Low,
-  Medium,
-  High,
+  Off = 'Off',
+  Low = 'Low',
+  Medium = 'Medium',
+  High = 'High',
 }
 
 enum LightState {
-  Off,
-  On,
+  Off = 'Off',
+  On = 'On',
+}
+
+interface Props {
+  displayName: string;
+}
+
+class NamedLogger {
+  name: string;
+  private log: Logger;
+
+  constructor(name: string, log: Logger) {
+    this.name = name;
+    this.log = log;
+  }
+
+  debug = (message: string, ...parameters: unknown[]): void =>
+    this.log.debug(`[${this.name}] ${message}`, ...parameters);
+
+  info = (message: string, ...parameters: unknown[]): void =>
+    this.log.info(`[${this.name}] ${message}`, ...parameters);
 }
 
 /**
@@ -33,12 +54,20 @@ export class HunterRfFanAccessory {
     light: LightState.Off,
     fan: FanState.Off,
     fanActive: false,
+    fanValue: 0,
   };
+
+  private props: Props;
+
+  private log: NamedLogger;
 
   constructor(
     private readonly platform: HunterFanRfPlatform,
     private readonly accessory: PlatformAccessory,
   ) {
+    this.props = accessory.context.device as Props;
+    this.log = new NamedLogger(this.props.displayName, this.platform.log);
+
     // set accessory information
     this.accessory
       .getService(this.platform.Service.AccessoryInformation)!
@@ -56,7 +85,7 @@ export class HunterRfFanAccessory {
       this.accessory.addService(this.platform.Service.Lightbulb);
 
     this.fanService =
-      this.accessory.getService(this.platform.Service.Fanv2) ||
+      this.accessory.getService(this.platform.Service.Fan) ||
       this.accessory.addService(this.platform.Service.Fanv2);
 
     // To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
@@ -67,12 +96,12 @@ export class HunterRfFanAccessory {
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
     this.lightService.setCharacteristic(
       this.platform.Characteristic.Name,
-      accessory.context.device.exampleDisplayName,
+      this.props.displayName,
     );
 
     this.fanService.setCharacteristic(
       this.platform.Characteristic.Name,
-      accessory.context.device.exampleDisplayName,
+      this.props.displayName,
     );
 
     // each service must implement at-minimum the "required characteristics" for the given service type
@@ -80,18 +109,18 @@ export class HunterRfFanAccessory {
 
     this.lightService
       .getCharacteristic(this.platform.Characteristic.On)
-      .on('set', this.onLightSetOn)
-      .on('get', this.onLightGetOn);
+      .on('get', this.onLightGetOn)
+      .on('set', this.onLightSetOn);
 
     this.fanService
       .getCharacteristic(this.platform.Characteristic.Active)
-      .on('set', this.onLightSetOn)
-      .on('get', this.onLightGetOn);
+      .on('get', this.onFanGetActive)
+      .on('set', this.onFanSetActive);
 
     this.fanService
       .getCharacteristic(this.platform.Characteristic.RotationSpeed)
-      .on('set', this.onFanSetRotationSpeed)
-      .on('get', this.onFanGetRotationSpeed);
+      .on('get', this.onFanGetRotationSpeed)
+      .on('set', this.onFanSetRotationSpeed);
   }
 
   onLightSetOn = (
@@ -101,7 +130,7 @@ export class HunterRfFanAccessory {
     // implement your own code to turn your device on/off
     this.state.light = (value as boolean) ? LightState.On : LightState.Off;
 
-    this.platform.log.debug('Set Light On ->', value);
+    this.log.debug('Set Light On ->', value);
 
     // you must call the callback function
     callback(null);
@@ -111,7 +140,7 @@ export class HunterRfFanAccessory {
     // implement your own code to check if the device is on
     const isOn = this.state.light === LightState.On;
 
-    this.platform.log.debug('Get Light On ->', isOn);
+    this.log.debug('Get Light On ->', isOn);
 
     // you must call the callback function
     // the first argument should be null if there were no errors
@@ -128,7 +157,7 @@ export class HunterRfFanAccessory {
     // implement your own code to turn your device on/off
     this.state.fanActive = Boolean((value as number) === Active.ACTIVE);
 
-    this.platform.log.debug('Set Fan Active ->', value);
+    this.log.debug('Set Fan Active ->', value);
 
     // you must call the callback function
     callback(null);
@@ -136,9 +165,9 @@ export class HunterRfFanAccessory {
 
   onFanGetActive = (callback: CharacteristicGetCallback) => {
     // implement your own code to check if the device is on
-    const isActive = this.state.fan !== FanState.Off;
+    const isActive = this.state.fanActive;
 
-    this.platform.log.debug('Get Fan Active ->', isActive);
+    this.log.debug('Get Fan Active ->', isActive);
 
     // you must call the callback function
     // the first argument should be null if there were no errors
@@ -151,6 +180,7 @@ export class HunterRfFanAccessory {
     callback: CharacteristicSetCallback,
   ) => {
     const targetValue = value as number;
+    this.state.fanValue = value as number;
 
     if (targetValue > 1 && targetValue < 33) {
       this.state.fan = FanState.Low;
@@ -164,14 +194,16 @@ export class HunterRfFanAccessory {
       this.state.fan = FanState.High;
     }
 
-    this.platform.log.debug('Set Fan Speed ->', value);
+    this.log.debug(`Set Fan Speed -> ${value} [${this.state.fan.toString()}]`);
 
     callback(null);
   };
 
   onFanGetRotationSpeed = (callback: CharacteristicGetCallback) => {
-    this.platform.log.debug('Get Fan Speed ->', this.state.fan.toString());
+    const { fanValue, fan } = this.state;
 
-    callback(null, this.state.fan);
+    this.log.debug(`Get Fan Speed -> ${fanValue} [${fan.toString()}]`);
+
+    callback(null, this.state.fanValue);
   };
 }
