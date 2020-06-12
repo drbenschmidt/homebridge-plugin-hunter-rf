@@ -23,6 +23,7 @@ enum LightState {
 
 interface Props {
   displayName: string;
+  id: number;
 }
 
 class NamedLogger {
@@ -132,8 +133,11 @@ export class HunterRfFanAccessory {
 
     this.log.debug('Set Light On ->', value);
 
-    // you must call the callback function
-    callback(null);
+    this.platform.piLink.getFan(this.props.id).then((fan) => {
+      fan?.setFanLight(value as boolean);
+      // you must call the callback function
+      callback(null);
+    });
   };
 
   onLightGetOn = (callback: CharacteristicGetCallback) => {
@@ -195,6 +199,10 @@ export class HunterRfFanAccessory {
     }
 
     this.log.debug(`Set Fan Speed -> ${value} [${this.state.fan.toString()}]`);
+
+    this.platform.piLink.getFan(this.props.id).then((fan) => {
+      fan?.setFanSpeed(value as number);
+    });
 
     callback(null);
   };
